@@ -1,0 +1,126 @@
+# Station Raw Data — Origin, Assumptions & Processing
+
+## Data Origin
+
+Raw meteorological data comes from the **UCR-µEMA network** (Universidad de Costa
+Rica micro-Environmental Monitoring Array), 10 low-cost weather stations
+deployed across Costa Rica. Each station reports three sensor channels:
+
+| Feature              | Unit | Notes                                         |
+| -------------------- | ---- | --------------------------------------------- |
+| Atmospheric pressure | hPa  | Calibration-corrected per station (see below) |
+| Precipitation        | mm   | Accumulated per 10-minute bin                 |
+| Luminous intensity   | lux  | Raw sensor reading                            |
+
+Data is collected via MQTT into an InfluxDB instance and queried through a
+Grafana proxy (`relampagos.ucr.ac.cr`) using Flux queries. It was pulled with a
+one-off downloader tool (not included in this project) that issued queries in
+30-day chunks per station/feature to avoid timing out the Grafana API, and
+saved the results as **one CSV per station per feature**.
+
+This project stores the downloaded CSVs verbatim, flattened into a single
+`data/stations/raw/` folder (no per-feature subfolders), one file per
+station/feature combination.
+
+## Stations
+
+10 stations, identified by a `filename` slug (also used as the CSV filename
+component) and an index prefix `00`–`09`:
+
+- 00 `sede-central_finca-1`
+- 01 `recinto-esparza`
+- 02 `sede-sur_golfito`
+- 03 `recinto-guapiles`
+- 04 `sede-guanacaste_liberia`
+- 05 `sede-caribe_limon`
+- 06 `sede-atlantico_turrialba`
+- 07 `sede-central_finca-2`
+- 08 `sede-central_finca-3`
+- 09 `recinto-santa-cruz`
+
+CSV naming convention: `{index}_{feature}_{station}.csv`, e.g.
+`00_pressure_sede-central_finca-1.csv`.
+
+## Processing Applied at Download Time
+
+The following transformations are **already baked into the raw CSVs** — they
+were applied server-side in the Flux query before the data was ever written to
+disk, so they are not "raw sensor values" in the strictest sense:
+
+1. **10-minute aggregation window.** All series are aggregated with
+   `aggregateWindow(every: 10m, ...)`:
+   - Precipitation: **summed** per 10-min window (accumulation).
+   - Pressure & luminous intensity: **averaged (mean)** per 10-min window.
+   - Timestamps in the CSV mark the _end_ of each 10-minute bin.
+
+2. **Precipitation unit conversion.** Raw tipping-bucket counts are multiplied
+   by `0.2794` to convert to millimeters (`value * 0.2794`). This constant is the mm-per-tip calibration factor for the bucket hardware used.
+
+3. **Precipitation empty-bin fill.** Windows with no readings are created
+   explicitly (`createEmpty: true`) and filled with `0.0` — i.e., "no data
+   reported" is assumed to mean "no rain," not treated as missing. This is a
+   deliberate assumption: it is reasonable for precipitation but should **not**
+   be replicated for other sensor types.
+
+4. **Pressure calibration offset.** A **station-specific constant** (in hPa)
+   is added to every raw pressure reading before it is saved, to correct for
+   sensor/altitude calibration bias. This offset is _baked into the CSV
+   values_ — the numbers in `pressure` CSVs are already corrected, not
+   sensor-raw. Offsets used (hPa):
+
+   | Station                  | Offset (hPa) |
+   | ------------------------ | ------------ |
+   | sede-central_finca-1     | +136.3       |
+   | recinto-esparza          | +23.8        |
+   | sede-sur_golfito         | +3.1         |
+   | recinto-guapiles         | +32.6        |
+   | sede-guanacaste_liberia  | +15.3        |
+   | sede-caribe_limon        | +7.4         |
+   | sede-atlantico_turrialba | +75.1        |
+   | sede-central_finca-2     | +138.3       |
+   | sede-central_finca-3     | +138.3       |
+   | recinto-santa-cruz       | +5.9         |
+
+5. **Timezone.** Timestamps are converted from UTC (native InfluxDB storage)
+   to **Costa Rica local time (UTC−06:00, fixed offset, no DST)** before
+   writing. The `time` column format is `YYYY-MM-DD HH:MM:SS`, naive
+   (no timezone suffix), but is implicitly CR local time.
+
+6. **Luminous intensity and precipitation had no map/offset transform**
+   beyond what's listed above (lux is stored as the raw sensor mean; no
+   calibration offset applied).
+
+## CSV Schema
+
+Each raw CSV has exactly two columns:
+
+time,value\_\<unit\>
+
+- `pressure/*.csv` → `time,value_hPa`
+- `precipitation/*.csv` → `time,value_mm`
+- `luminous_intensity/*.csv` → `time,value_lux`
+
+## Known Data Quality Caveats (inherited, not fixed at download time)
+
+- **Sensor hardware differences.** Some stations use a `BME` pressure sensor, others use `LPS`. 
+  The calibration offsets above were derived per-hardware/per-station and are not necessarily 
+  interchangeable if a sensor is swapped.
+- **`sede-central_finca-2` luminous intensity** is known to be unreliable/
+  absent before **2025-05-20 18:20:00** — the sensor was not operational until
+  that date. Data before that timestamp should be discarded or flagged, not
+  treated as valid zero readings.
+- **`recinto-guapiles`** has known data quality issues across all sensors and
+  was excluded entirely from downstream modeling in the source project.
+- Gaps (missing 10-min bins) can still occur for pressure and luminous
+  intensity despite the `fill(value: 0.0)` logic — that fill only applies to
+  precipitation. Pressure/lux gaps are true missing data and must be handled
+  downstream (interpolation, masking, etc.), not assumed to be zero.
+- No outlier filtering, deduplication, or unit sanity-checking was performed
+  at download time — CSVs are the direct Flux query output.
+
+## Time Range
+
+Data was downloaded incrementally over time; per-station coverage windows are
+not uniform (some stations came online later, some had sensor outages). Always
+check each CSV's actual min/max timestamp rather than assuming a shared range
+across stations.

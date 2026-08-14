@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "uema"
+version = "0.1.0"
+description = "Data analysis stage for the µEMA weather station network project"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas",
+    "numpy",
+    "matplotlib",
+    "seaborn",
+    "jupyter",
+    "ipykernel",
+    "pyarrow",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "pytest",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/uema"]
