@@ -3,7 +3,7 @@ recinto-esparza,ok,ok,ok,GO,all sensors within coverage thresholds
 recinto-guapiles,degraded,ok,short-history,NO-GO,pressure sensor span under 90 days — insufficient history to use
 recinto-santa-cruz,degraded,ok,degraded,CONDITIONAL-GO,"usable with caveats on: luminous_intensity, pressure"
 sede-atlantico_turrialba,ok,ok,ok,GO,all sensors within coverage thresholds
-sede-caribe_limon,ok,ok,ok,GO,all sensors within coverage thresholds
+sede-caribe_limon,ok,ok,ok,NO-GO,manual override: flagged by manual review despite clearing numeric thresholds
 sede-central_finca-1,ok,ok,ok,GO,all sensors within coverage thresholds
 sede-central_finca-2,degraded,ok,degraded,CONDITIONAL-GO,"usable with caveats on: luminous_intensity, pressure"
 sede-central_finca-3,degraded,ok,degraded,CONDITIONAL-GO,"usable with caveats on: luminous_intensity, pressure"

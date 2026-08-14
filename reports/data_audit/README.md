@@ -22,8 +22,13 @@ For each of the 10 stations' 3 raw sensor CSVs (`pressure`, `precipitation`,
 
 `timeline.png` plots this as filled/gap segments per station × sensor, so
 coverage and gaps are visible directly rather than inferred from a table.
-Font and color palette are the project-wide fixed style (`src/uema/style.py`)
-— see that module for the palette hexes and font fallback chain.
+`timeline_grouped.png` is the same per-sensor segments, but split into a GO
+block and a CONDITIONAL-GO/NO-GO block, each sorted by overall data
+availability (`uema.audit.station_availability` — actual/expected rows
+summed across a station's three sensors), highest first, with a dashed
+divider between the two blocks. Font and color palette are the project-wide
+fixed style (`src/uema/style.py`) — see that module for the palette hexes
+and font fallback chain.
 
 ## Go/no-go thresholds
 
@@ -44,13 +49,25 @@ A station is:
   per station below) — not silently dropped later in a pipeline
 - **GO** — all three sensors clean
 
+These are then subject to `uema.audit.MANUAL_OVERRIDES` — an explicit,
+editable dict of `station -> (decision, reason)` for analyst judgment calls
+that override the numeric-threshold decision (e.g. a station that clears
+the thresholds on paper but is known/observed to be unreliable). Currently:
+
+| Station              | Override | Reason                                                  |
+| --------------------- | -------- | -------------------------------------------------------- |
+| `sede-caribe_limon`   | NO-GO    | flagged by manual review despite clearing numeric thresholds |
+
+Edit `MANUAL_OVERRIDES` in `src/uema/audit.py` to add/remove/change these as
+the assessment changes; every entry there is reflected automatically in
+`station_recommendation.csv` and both timeline figures.
+
 ## Result
 
 | Station                  | Decision           | Rationale                                                                                                                                          |
 | ------------------------ | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | recinto-esparza          | **GO**             | all sensors within thresholds                                                                                                                      |
 | sede-atlantico_turrialba | **GO**             | all sensors within thresholds                                                                                                                      |
-| sede-caribe_limon        | **GO**             | all sensors within thresholds                                                                                                                      |
 | sede-central_finca-1     | **GO**             | all sensors within thresholds                                                                                                                      |
 | sede-guanacaste_liberia  | **GO**             | all sensors within thresholds                                                                                                                      |
 | sede-sur_golfito         | **GO**             | all sensors within thresholds                                                                                                                      |
@@ -58,8 +75,10 @@ A station is:
 | sede-central_finca-2     | **CONDITIONAL-GO** | pressure & luminous_intensity degraded (~39% missing) — see the raw README for the documented luminous_intensity outage before 2025-05-20          |
 | sede-central_finca-3     | **CONDITIONAL-GO** | pressure & luminous_intensity degraded (~51% missing, gaps up to 106 days) — precipitation only if using this station without special gap handling |
 | recinto-guapiles         | **NO-GO**          | pressure sensor span is 0.12 days (18 rows total) — under the 90-day minimum, effectively no usable pressure history                               |
+| sede-caribe_limon        | **NO-GO**          | manual override — clears numeric thresholds but flagged by manual review (see `MANUAL_OVERRIDES` above)                                            |
 
-6 GO, 3 CONDITIONAL-GO, 1 NO-GO.
+5 GO, 3 CONDITIONAL-GO, 2 NO-GO (one of the NO-GOs is a manual override, not
+a threshold failure — see above).
 
 ## Notable findings (beyond the per-station verdict)
 

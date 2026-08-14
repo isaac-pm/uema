@@ -100,6 +100,16 @@ def classify_sensor(row: pd.Series) -> str:
     return "ok"
 
 
+# Manual overrides for this analysis phase — analyst judgment calls that
+# override the numeric-threshold decision above (e.g. a station that clears
+# the thresholds on paper but is known/observed to be unreliable, or vice
+# versa). Edit this dict as the assessment changes; each entry is
+# station -> (decision, reason). Keep reasons specific enough to audit later.
+MANUAL_OVERRIDES: dict[str, tuple[str, str]] = {
+    "sede-caribe_limon": ("NO-GO", "flagged by manual review despite clearing numeric thresholds"),
+}
+
+
 def station_recommendation(coverage: pd.DataFrame) -> pd.DataFrame:
     """Per-station go/no-go for this analysis phase.
 
@@ -108,8 +118,9 @@ def station_recommendation(coverage: pd.DataFrame) -> pd.DataFrame:
     a bounded exclusion — see rationale), or NO-GO (pressure — the sensor
     every station is expected to have — is absent or too short a history to
     use). Purely a function of the computed tiers, no per-station
-    special-casing. This is an explicit decision, not a silent filter
-    applied later in a pipeline.
+    special-casing, except for the explicit MANUAL_OVERRIDES table above —
+    this is an explicit decision, not a silent filter applied later in a
+    pipeline.
     """
     coverage = coverage.copy()
     coverage["tier"] = coverage.apply(classify_sensor, axis=1)
@@ -133,8 +144,20 @@ def station_recommendation(coverage: pd.DataFrame) -> pd.DataFrame:
             decision = "GO"
             rationale = "all sensors within coverage thresholds"
 
+        if station in MANUAL_OVERRIDES:
+            decision, override_reason = MANUAL_OVERRIDES[station]
+            rationale = f"manual override: {override_reason}"
+
         rows.append(
             {"station": station, **tiers, "decision": decision, "rationale": rationale}
         )
 
     return pd.DataFrame(rows).set_index("station").sort_index()
+
+
+def station_availability(coverage: pd.DataFrame) -> pd.Series:
+    """Per-station overall data availability (actual/expected rows, summed
+    across sensors) — used to sort/rank stations by how much data they have,
+    independent of the go/no-go decision."""
+    totals = coverage.groupby("station")[["actual_rows", "expected_rows"]].sum()
+    return (totals["actual_rows"] / totals["expected_rows"]).rename("availability")
