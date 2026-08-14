@@ -1,0 +1,11 @@
+station,luminous_intensity,precipitation,pressure,decision,rationale
+recinto-esparza,ok,ok,ok,GO,all sensors within coverage thresholds
+recinto-guapiles,degraded,ok,short-history,NO-GO,documented station-wide data-quality issue (known data-quality issues across all sensors (see raw README); known data-quality issues across all sensors (see raw README); known data-quality issues across all sensors (see raw README))
+recinto-santa-cruz,degraded,ok,degraded,CONDITIONAL-GO,"usable with caveats on: luminous_intensity, pressure"
+sede-atlantico_turrialba,ok,ok,ok,GO,all sensors within coverage thresholds
+sede-caribe_limon,ok,ok,ok,GO,all sensors within coverage thresholds
+sede-central_finca-1,ok,ok,ok,GO,all sensors within coverage thresholds
+sede-central_finca-2,degraded,ok,degraded,CONDITIONAL-GO,"usable with caveats on: luminous_intensity, pressure (unreliable before 2025-05-20 18:20:00)"
+sede-central_finca-3,degraded,ok,degraded,CONDITIONAL-GO,"usable with caveats on: luminous_intensity, pressure"
+sede-guanacaste_liberia,ok,ok,ok,GO,all sensors within coverage thresholds
+sede-sur_golfito,ok,ok,ok,GO,all sensors within coverage thresholds
