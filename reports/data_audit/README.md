@@ -37,8 +37,8 @@ label alignment), which is out of scope for this phase. A sensor is:
 
 A station is:
 
-- **NO-GO** — flagged as a documented station-wide issue in
-  `data/stations/raw/README.md`, or its pressure sensor is absent
+- **NO-GO** — its pressure sensor (the one every station is expected to
+  have) is absent or short-history
 - **CONDITIONAL-GO** — usable, but one or more sensors are degraded /
   short-history / absent and must be scoped around explicitly (see rationale
   per station below) — not silently dropped later in a pipeline
@@ -46,18 +46,18 @@ A station is:
 
 ## Result
 
-| Station | Decision | Rationale |
-|---|---|---|
-| recinto-esparza | **GO** | all sensors within thresholds |
-| sede-atlantico_turrialba | **GO** | all sensors within thresholds |
-| sede-caribe_limon | **GO** | all sensors within thresholds |
-| sede-central_finca-1 | **GO** | all sensors within thresholds |
-| sede-guanacaste_liberia | **GO** | all sensors within thresholds |
-| sede-sur_golfito | **GO** | all sensors within thresholds |
-| recinto-santa-cruz | **CONDITIONAL-GO** | pressure & luminous_intensity degraded (~47% missing, gaps up to 42 days) — precipitation only if using this station without special gap handling |
-| sede-central_finca-2 | **CONDITIONAL-GO** | pressure & luminous_intensity degraded (~39% missing); luminous_intensity additionally documented unreliable before 2025-05-20 18:20:00 |
-| sede-central_finca-3 | **CONDITIONAL-GO** | pressure & luminous_intensity degraded (~51% missing, gaps up to 106 days) — precipitation only if using this station without special gap handling |
-| recinto-guapiles | **NO-GO** | documented station-wide data-quality issue; pressure sensor is effectively absent (18 rows total, ~0.04% of expected) |
+| Station                  | Decision           | Rationale                                                                                                                                          |
+| ------------------------ | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| recinto-esparza          | **GO**             | all sensors within thresholds                                                                                                                      |
+| sede-atlantico_turrialba | **GO**             | all sensors within thresholds                                                                                                                      |
+| sede-caribe_limon        | **GO**             | all sensors within thresholds                                                                                                                      |
+| sede-central_finca-1     | **GO**             | all sensors within thresholds                                                                                                                      |
+| sede-guanacaste_liberia  | **GO**             | all sensors within thresholds                                                                                                                      |
+| sede-sur_golfito         | **GO**             | all sensors within thresholds                                                                                                                      |
+| recinto-santa-cruz       | **CONDITIONAL-GO** | pressure & luminous_intensity degraded (~47% missing, gaps up to 42 days) — precipitation only if using this station without special gap handling  |
+| sede-central_finca-2     | **CONDITIONAL-GO** | pressure & luminous_intensity degraded (~39% missing) — see the raw README for the documented luminous_intensity outage before 2025-05-20          |
+| sede-central_finca-3     | **CONDITIONAL-GO** | pressure & luminous_intensity degraded (~51% missing, gaps up to 106 days) — precipitation only if using this station without special gap handling |
+| recinto-guapiles         | **NO-GO**          | pressure sensor span is 0.12 days (18 rows total) — under the 90-day minimum, effectively no usable pressure history                               |
 
 6 GO, 3 CONDITIONAL-GO, 1 NO-GO.
 

@@ -2,9 +2,7 @@
 
 Builds a coverage table (station x sensor -> start, end, expected/actual row
 counts, %missing) and flags gaps, so downstream analysis knows which stations
-have enough clean history before any method is run on them. See
-data/stations/raw/README.md for the caveats this module surfaces
-(finca-2 luminous outage, recinto-guapiles known issues, etc.).
+have enough clean history before any method is run on them.
 """
 
 from __future__ import annotations
@@ -14,11 +12,6 @@ from dataclasses import dataclass
 import pandas as pd
 
 from uema.io import SAMPLING_INTERVAL, RawFile, discover_raw_files, load_raw_series
-
-# Known, documented caveats (data/stations/raw/README.md) applied as
-# annotations during the audit — not silently patched into the data.
-FINCA2_LUX_UNRELIABLE_BEFORE = pd.Timestamp("2025-05-20 18:20:00")
-KNOWN_BAD_STATIONS = {"recinto-guapiles"}
 
 
 @dataclass(frozen=True)
@@ -34,7 +27,6 @@ class SensorCoverage:
     pct_missing: float
     n_gaps: int
     max_gap: pd.Timedelta
-    notes: str
 
 
 def _expected_rows(start: pd.Timestamp, end: pd.Timestamp) -> int:
@@ -48,15 +40,6 @@ def _gap_stats(index: pd.DatetimeIndex) -> tuple[int, pd.Timedelta]:
     if gaps.empty:
         return 0, pd.Timedelta(0)
     return len(gaps), gaps.max()
-
-
-def _notes_for(raw_file: RawFile) -> str:
-    notes = []
-    if raw_file.station in KNOWN_BAD_STATIONS:
-        notes.append("known data-quality issues across all sensors (see raw README)")
-    if raw_file.feature == "luminous_intensity" and raw_file.station == "sede-central_finca-2":
-        notes.append(f"unreliable before {FINCA2_LUX_UNRELIABLE_BEFORE}")
-    return "; ".join(notes)
 
 
 def audit_sensor(raw_file: RawFile) -> SensorCoverage:
@@ -77,7 +60,6 @@ def audit_sensor(raw_file: RawFile) -> SensorCoverage:
         pct_missing=100 * (expected - actual) / expected,
         n_gaps=n_gaps,
         max_gap=max_gap,
-        notes=_notes_for(raw_file),
     )
 
 
@@ -123,9 +105,11 @@ def station_recommendation(coverage: pd.DataFrame) -> pd.DataFrame:
 
     Rolls up per-sensor tiers (classify_sensor) into one row per station:
     GO (all sensors clean), CONDITIONAL-GO (usable but specific sensors need
-    a bounded exclusion — see rationale), or NO-GO (documented station-wide
-    issue, or the pressure sensor is effectively absent). This is an
-    explicit decision, not a silent filter applied later in the pipeline.
+    a bounded exclusion — see rationale), or NO-GO (pressure — the sensor
+    every station is expected to have — is absent or too short a history to
+    use). Purely a function of the computed tiers, no per-station
+    special-casing. This is an explicit decision, not a silent filter
+    applied later in a pipeline.
     """
     coverage = coverage.copy()
     coverage["tier"] = coverage.apply(classify_sensor, axis=1)
@@ -133,16 +117,14 @@ def station_recommendation(coverage: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for station, group in coverage.groupby("station"):
         tiers = dict(zip(group["feature"], group["tier"]))
-        notes = "; ".join(n for n in group["notes"] if n)
-        known_bad = station in KNOWN_BAD_STATIONS
+        pressure_tier = tiers.get("pressure")
 
-        if known_bad or tiers.get("pressure") == "absent":
+        if pressure_tier == "absent":
             decision = "NO-GO"
-            rationale = (
-                "documented station-wide data-quality issue"
-                if known_bad
-                else "pressure sensor effectively absent"
-            )
+            rationale = "pressure sensor effectively absent"
+        elif pressure_tier == "short-history":
+            decision = "NO-GO"
+            rationale = f"pressure sensor span under {MIN_SPAN_DAYS} days — insufficient history to use"
         elif any(t != "ok" for t in tiers.values()):
             decision = "CONDITIONAL-GO"
             flagged = [f for f, t in tiers.items() if t != "ok"]
@@ -151,9 +133,8 @@ def station_recommendation(coverage: pd.DataFrame) -> pd.DataFrame:
             decision = "GO"
             rationale = "all sensors within coverage thresholds"
 
-        if notes:
-            rationale = f"{rationale} ({notes})"
-
-        rows.append({"station": station, **tiers, "decision": decision, "rationale": rationale})
+        rows.append(
+            {"station": station, **tiers, "decision": decision, "rationale": rationale}
+        )
 
     return pd.DataFrame(rows).set_index("station").sort_index()
