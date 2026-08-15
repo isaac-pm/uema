@@ -1,11 +1,11 @@
-station,luminous_intensity,precipitation,pressure,decision,rationale
-recinto-esparza,ok,ok,ok,GO,all sensors within coverage thresholds
-recinto-guapiles,degraded,ok,short-history,NO-GO,pressure sensor span under 90 days — insufficient history to use
-recinto-santa-cruz,degraded,ok,degraded,CONDITIONAL-GO,"usable with caveats on: luminous_intensity, pressure"
-sede-atlantico_turrialba,ok,ok,ok,GO,all sensors within coverage thresholds
-sede-caribe_limon,ok,ok,ok,NO-GO,manual override: flagged by manual review despite clearing numeric thresholds
-sede-central_finca-1,ok,ok,ok,GO,all sensors within coverage thresholds
-sede-central_finca-2,degraded,ok,degraded,CONDITIONAL-GO,"usable with caveats on: luminous_intensity, pressure"
-sede-central_finca-3,degraded,ok,degraded,CONDITIONAL-GO,"usable with caveats on: luminous_intensity, pressure"
-sede-guanacaste_liberia,ok,ok,ok,GO,all sensors within coverage thresholds
-sede-sur_golfito,ok,ok,ok,GO,all sensors within coverage thresholds
+station,luminous_intensity,precipitation,pressure,decision,rationale,best_window_start,best_window_end,best_window_days,windowed_decision
+recinto-esparza,ok,ok,ok,GO,all sensors within coverage thresholds,2024-11-24 13:00:00,2025-09-20 04:40:00,299.65277777777777,GO
+recinto-guapiles,degraded,ok,short-history,NO-GO,pressure sensor span under 90 days — insufficient history to use,,,,NO-GO
+recinto-santa-cruz,degraded,ok,degraded,CONDITIONAL-GO,"usable with caveats on: luminous_intensity, pressure",2025-11-30 07:00:00,2026-03-01 00:00:00,90.70833333333333,WINDOWED-GO
+sede-atlantico_turrialba,ok,ok,ok,GO,all sensors within coverage thresholds,2024-10-18 05:00:00,2026-03-01 00:00:00,498.7916666666667,GO
+sede-caribe_limon,ok,ok,ok,NO-GO,manual override: flagged by manual review despite clearing numeric thresholds,,,,NO-GO
+sede-central_finca-1,ok,ok,ok,GO,all sensors within coverage thresholds,2025-11-08 17:40:00,2026-03-01 00:00:00,112.26388888888889,GO
+sede-central_finca-2,degraded,ok,degraded,CONDITIONAL-GO,"usable with caveats on: luminous_intensity, pressure",,,,NO-GO
+sede-central_finca-3,degraded,ok,degraded,CONDITIONAL-GO,"usable with caveats on: luminous_intensity, pressure",,,,NO-GO
+sede-guanacaste_liberia,ok,ok,ok,GO,all sensors within coverage thresholds,2024-12-12 16:10:00,2025-09-05 01:00:00,266.36805555555554,GO
+sede-sur_golfito,ok,ok,ok,GO,all sensors within coverage thresholds,2025-06-29 21:10:00,2026-02-18 10:10:00,233.54166666666666,GO

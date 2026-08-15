@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from uema.io import SAMPLING_INTERVAL, RawFile, discover_raw_files, load_raw_series
+from uema.io import FEATURES, SAMPLING_INTERVAL, RawFile, discover_raw_files, load_raw_series
 
 
 @dataclass(frozen=True)
@@ -110,7 +110,84 @@ MANUAL_OVERRIDES: dict[str, tuple[str, str]] = {
 }
 
 
-def station_recommendation(coverage: pd.DataFrame) -> pd.DataFrame:
+def _rolling_pct_missing(
+    series: pd.Series, full_index: pd.DatetimeIndex, window_days: int
+) -> pd.Series:
+    """Trailing rolling %missing of `series` against a full sampling-interval grid."""
+    present = pd.Series(0.0, index=full_index)
+    present.loc[present.index.isin(series.index)] = 1.0
+    rolling_mean = present.rolling(f"{window_days}D", min_periods=1).mean()
+    return 100 * (1 - rolling_mean)
+
+
+def _contiguous_true_stretches(mask: pd.Series) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+    """(start, end) of each contiguous run of True values in a boolean Series."""
+    if not mask.any():
+        return []
+    group_id = (mask != mask.shift()).cumsum()
+    return [
+        (g.index[0], g.index[-1])
+        for _, g in mask.groupby(group_id)
+        if g.iloc[0]
+    ]
+
+
+WINDOW_DAYS = 30
+
+
+def find_best_common_window(
+    raw_files: list[RawFile],
+    station: str,
+    sensors: tuple[str, ...] = FEATURES,
+    window_days: int = WINDOW_DAYS,
+    pct_missing_threshold: float = PCT_MISSING_DEGRADED,
+    min_span_days: float = MIN_SPAN_DAYS,
+) -> tuple[pd.Timestamp, pd.Timestamp, float] | None:
+    """Longest stretch where all `sensors` are simultaneously clean at `station`.
+
+    Complements the whole-span decision in `station_recommendation`: a station
+    can fail whole-span thresholds while still containing a long, clean
+    sub-period worth using on its own. For each sensor, computes a trailing
+    `window_days`-day rolling %missing over a full sampling-interval grid,
+    marks bins where that stays under `pct_missing_threshold`, and intersects
+    across `sensors`. Returns (window_start, window_end, window_days) for the
+    longest resulting contiguous stretch, or None if nothing clears
+    `min_span_days`.
+    """
+    station_files = {f.feature: f for f in raw_files if f.station == station}
+    if any(s not in station_files for s in sensors):
+        return None
+
+    series_by_sensor = {s: load_raw_series(station_files[s]) for s in sensors}
+    # Intersection of sensor spans, not union: a bin before a sensor's own
+    # recorded start isn't a real gap, it's the sensor not existing yet, and
+    # counting it as missing would poison the trailing rolling window for the
+    # first window_days after that sensor's real data begins.
+    full_start = max(s.index.min() for s in series_by_sensor.values())
+    full_end = min(s.index.max() for s in series_by_sensor.values())
+    if full_start >= full_end:
+        return None
+    full_index = pd.date_range(full_start, full_end, freq=SAMPLING_INTERVAL)
+
+    combined_good = pd.Series(True, index=full_index)
+    for s in sensors:
+        pct_missing = _rolling_pct_missing(series_by_sensor[s], full_index, window_days)
+        combined_good &= pct_missing < pct_missing_threshold
+
+    stretches = _contiguous_true_stretches(combined_good)
+    if not stretches:
+        return None
+
+    window_start, window_end = max(stretches, key=lambda se: se[1] - se[0])
+    window_span_days = (window_end - window_start).total_seconds() / 86400
+    if window_span_days < min_span_days:
+        return None
+    return window_start, window_end, window_span_days
+
+
+def station_recommendation(
+    coverage: pd.DataFrame, raw_files: list[RawFile] | None = None
+) -> pd.DataFrame:
     """Per-station go/no-go for this analysis phase.
 
     Rolls up per-sensor tiers (classify_sensor) into one row per station:
@@ -121,7 +198,17 @@ def station_recommendation(coverage: pd.DataFrame) -> pd.DataFrame:
     special-casing, except for the explicit MANUAL_OVERRIDES table above —
     this is an explicit decision, not a silent filter applied later in a
     pipeline.
+
+    Also runs `find_best_common_window` per station and derives
+    `windowed_decision`: GO stations keep "GO" (whole span already applies);
+    everything else becomes "WINDOWED-GO" if a valid common window exists,
+    else "NO-GO". This is independent of MANUAL_OVERRIDES on `decision` — an
+    overridden station's window (if any) still shows up here, so both facts
+    stay visible rather than one silently masking the other.
     """
+    if raw_files is None:
+        raw_files = discover_raw_files()
+
     coverage = coverage.copy()
     coverage["tier"] = coverage.apply(classify_sensor, axis=1)
 
@@ -148,11 +235,53 @@ def station_recommendation(coverage: pd.DataFrame) -> pd.DataFrame:
             decision, override_reason = MANUAL_OVERRIDES[station]
             rationale = f"manual override: {override_reason}"
 
+        window = find_best_common_window(raw_files, station)
+        if window is not None:
+            best_window_start, best_window_end, best_window_days = window
+        else:
+            best_window_start = best_window_end = best_window_days = None
+
+        if decision == "GO":
+            windowed_decision = "GO"
+        elif best_window_days is not None:
+            windowed_decision = "WINDOWED-GO"
+        else:
+            windowed_decision = "NO-GO"
+
         rows.append(
-            {"station": station, **tiers, "decision": decision, "rationale": rationale}
+            {
+                "station": station,
+                **tiers,
+                "decision": decision,
+                "rationale": rationale,
+                "best_window_start": best_window_start,
+                "best_window_end": best_window_end,
+                "best_window_days": best_window_days,
+                "windowed_decision": windowed_decision,
+            }
         )
 
     return pd.DataFrame(rows).set_index("station").sort_index()
+
+
+def go_station_date_ranges(coverage: pd.DataFrame, recommendation: pd.DataFrame) -> pd.DataFrame:
+    """Per-GO-station date range where all three sensors are simultaneously present.
+
+    max() of each sensor's start and min() of each sensor's end — not any
+    single sensor's own range — since any analysis using this station needs
+    all three sensors available at once.
+    """
+    go_stations = recommendation.index[recommendation["decision"] == "GO"]
+    rows = []
+    for station in go_stations:
+        group = coverage[coverage["station"] == station]
+        start_date = group["start"].max()
+        end_date = group["end"].min()
+        span_days = (end_date - start_date).total_seconds() / 86400
+        rows.append(
+            {"station": station, "start_date": start_date, "end_date": end_date, "span_days": span_days}
+        )
+    return pd.DataFrame(rows).sort_values("station").reset_index(drop=True)
 
 
 def station_availability(coverage: pd.DataFrame) -> pd.Series:
