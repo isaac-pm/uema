@@ -63,9 +63,21 @@ def list_stations(raw_dir: Path = RAW_DIR) -> dict[str, str]:
 
 
 def load_raw_series(raw_file: RawFile) -> pd.Series:
-    """Load a single raw CSV as a time-indexed Series, sorted by time."""
+    """Load a single raw CSV as a time-indexed Series, sorted by time.
+
+    A handful of raw files carry duplicate `time` values — observed as a
+    duplicated ~30-day block in `sede-sur_golfito`/`sede-guanacaste_liberia`
+    precipitation, plus a stray single-timestamp duplicate in their
+    pressure/luminous_intensity — most likely two overlapping export/append
+    runs over the same period rather than two genuine readings. Downstream
+    code (`uema.silver.consolidate_stations`) needs a unique DatetimeIndex to
+    column-align sensors, so duplicates are dropped here, keeping the first
+    occurrence. This is a documented, deterministic choice, not a fix to the
+    raw CSVs — flagged as a caveat in data/stations/raw/README.md.
+    """
     df = pd.read_csv(raw_file.path, parse_dates=["time"])
     value_col = VALUE_COLUMNS[raw_file.feature]
     series = df.set_index("time")[value_col].sort_index()
+    series = series[~series.index.duplicated(keep="first")]
     series.name = value_col
     return series

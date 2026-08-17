@@ -117,6 +117,15 @@ time,value\_\<unit\>
   downstream (interpolation, masking, etc.), not assumed to be zero.
 - No outlier filtering, deduplication, or unit sanity-checking was performed
   at download time — CSVs are the direct Flux query output.
+- **`sede-sur_golfito` and `sede-guanacaste_liberia`** carry duplicate `time`
+  values: a ~30-day block of precipitation (2026-02-19 → 2026-03-21, 4320
+  rows, mostly but not entirely matching values on the ~23 bins where actual
+  rain was recorded) plus a single stray duplicated timestamp each in
+  pressure and luminous_intensity — most likely two overlapping export/append
+  runs over the same period, not two genuine readings. `uema.io.load_raw_series`
+  drops these, keeping the first occurrence, rather than silently letting them
+  break any downstream column-alignment (`pd.concat`) that needs a unique
+  index. Worth checking the export/append pipeline for the root cause.
 
 ## Time Range
 

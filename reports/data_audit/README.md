@@ -6,81 +6,86 @@ first knowing which stations have enough clean data to evaluate on, so this is
 done first rather than discovered later after running a full method
 comparison. Produced by `notebooks/00_data_audit.ipynb`
 (code in `src/uema/audit.py`). Regenerate by re-running that notebook —
-`coverage_table.csv`, `station_recommendation.csv`, `go_station_date_ranges.csv`,
-`timeline.png`, and `timeline_grouped.png` in this directory are its outputs,
-not hand-edited.
+`coverage_table.csv`, `station_recommendation.csv`, `timeline.png`, and
+`timeline_grouped.png` in this directory are its outputs, not hand-edited.
 
 ## Method
 
-For each of the 10 stations' 3 raw sensor CSVs (`pressure`, `precipitation`,
-`luminous_intensity`):
-
-- time range (`start`, `end`), and `span_days` between them
-- `expected_rows` — number of 10-minute bins the span should contain
-- `actual_rows`, `missing_rows`, `pct_missing`
-- `n_gaps` — count of breaks longer than one sampling interval
-- `max_gap` — the single largest gap
+For each of the 13 stations' 3 raw sensor CSVs (`pressure`, `precipitation`,
+`luminous_intensity`), `coverage_table.csv` reports each sensor's own,
+independent recorded history: time range (`start`, `end`) and `span_days`
+between them, `expected_rows`/`actual_rows`/`missing_rows`/`pct_missing`,
+`n_gaps` (breaks longer than one sampling interval), and `max_gap`. This is
+informational context — "how much total history does this sensor have" — not
+what the go/no-go decision is scored on (see below).
 
 `timeline.png` plots this as filled/gap segments per station × sensor, so
 coverage and gaps are visible directly rather than inferred from a table.
 `timeline_grouped.png` is the same per-sensor segments, but split into three
-blocks by `windowed_decision` (see below): GO, WINDOWED-GO, and NO-GO, each
-sorted by overall data availability (`uema.audit.station_availability` —
+blocks by `decision` (see below): GO, CONDITIONAL-GO, and NO-GO, each sorted
+by overall data availability (`uema.audit.station_availability` —
 actual/expected rows summed across a station's three sensors), highest
-first, with a dashed divider between blocks. WINDOWED-GO stations additionally
-get a dashed bracket outlining their best common window across all three
-sensor rows. Font and color palette are the project-wide fixed style
-(`src/uema/style.py`) — see that module for the palette hexes and font
-fallback chain.
+first, with a dashed divider between blocks. Font and color palette are the
+project-wide fixed style (`src/uema/style.py`) — see that module for the
+palette hexes and font fallback chain.
 
-### Windowed layer
+### Scoring on the joint window, not each sensor's own span
 
-`decision` (below) is computed over each sensor's *entire* recorded span, so
-it can't distinguish "uniformly mediocre for its whole history" from "has a
-long, clean sub-period inside a longer patchy record." `uema.audit.find_best_common_window`
-adds a second, independent layer: for a station, it computes a trailing
-30-day rolling %missing per sensor over the intersection of all sensors'
-recorded spans, marks bins where that stays under the same 25%-missing
-threshold used above, intersects across the three sensors, and returns the
-longest resulting contiguous stretch (if any clears the same 90-day minimum
-span). This yields `best_window_start`, `best_window_end`, `best_window_days`,
-and a derived `windowed_decision`: GO stations keep `"GO"` (their whole span
-already applies); everything else becomes `"WINDOWED-GO"` if a valid window
-exists, else stays `"NO-GO"`. This runs for every station, including GO
-ones — for GO stations the recovered window should closely track their
-existing full span, which is a useful sanity check that the windowed method
-agrees with the whole-span method where the whole-span method already says
-"clean."
+An earlier version of this audit tiered each sensor against its own
+individual recorded span. That's the wrong axis for a *joint* go/no-go call:
+a sensor with a long, mostly-clean individual history but only a short
+overlap with its sibling sensors would pass a tier it doesn't deserve for
+joint analysis, since the extra history outside the overlap can't be used
+for anything needing all three sensors together. `station_recommendation.csv`
+scores each sensor's completeness against the station's **joint window** —
+`joint_span_start`/`joint_span_end`, the intersection of all three sensors'
+recorded spans (max of each sensor's own start, min of each sensor's own
+end) — instead. A sensor tier is:
 
-`windowed_decision` is independent of `MANUAL_OVERRIDES` (below): overriding
-a station's whole-span `decision` doesn't suppress or force its windowed
-result, so a manually-overridden station's window (if any) still shows up
-in the table rather than being silently masked.
-
-`go_station_date_ranges.csv` gives, for each `decision == "GO"` station, the
-single date range where all three sensors are simultaneously present (max of
-each sensor's own start, min of each sensor's own end) — not any individual
-sensor's own, wider span. Any analysis using a GO station's full sensor set
-at once needs to stay within this range.
-
-## Go/no-go thresholds
-
-Deliberately about raw coverage only — not modeling-readiness (window counts,
-label alignment), which is out of scope for this phase. A sensor is:
-
-- **absent** — 0 rows, or ≥90% of expected bins missing
-- **short-history** — span under 90 days
-- **degraded** — >25% of expected bins missing
+- **absent** — 0 rows in the joint window, or ≥90% of its expected bins
+  missing
+- **short-history** — the joint window itself is under 90 days (same for
+  every sensor at a station, since it's a shared window)
+- **degraded** — either >25% of expected bins missing within the joint
+  window, **or** the single longest gap inside it exceeds 7 days — even a
+  low aggregate %missing can hide one unbridgeable multi-day outage
+  (`silver.py` only linearly bridges gaps ≤6h), so gap length is checked
+  independently of the aggregate
 - **ok** — otherwise
 
 A station is:
 
-- **NO-GO** — its pressure sensor (the one every station is expected to
-  have) is absent or short-history
+- **NO-GO** — its sensors never overlap at all, or its pressure sensor (the
+  one every station is expected to have) is absent or short-history within
+  the joint window
 - **CONDITIONAL-GO** — usable, but one or more sensors are degraded /
-  short-history / absent and must be scoped around explicitly (see rationale
-  per station below) — not silently dropped later in a pipeline
-- **GO** — all three sensors clean
+  short-history / absent within the joint window, or the joint window has
+  thin coverage of one Costa Rica season (see below) — scoped around
+  explicitly (see rationale per station below), not silently dropped later
+  in a pipeline
+- **GO** — all three sensors clean within the joint window, and both
+  seasons are adequately represented
+
+A GO station is further checked for **season coverage**: if the joint
+window has fewer than 30 days of either Costa Rica dry-season (Dec–Apr) or
+wet-season (May–Nov) days (`uema.correlation.season_bucket`), it's
+downgraded to CONDITIONAL-GO. Step 1 (`uema.correlation`) conditions some
+correlations on dry/wet season, and a window sitting almost entirely in one
+season would silently bias that split without this check — `dry_days`/
+`wet_days` in `station_recommendation.csv` report the count for every
+station regardless of decision.
+
+`decision` is the **only** go/no-go signal — there is deliberately no
+second "windowed" layer searching for a per-station optimal clean
+sub-window (an earlier version of this audit had one). That's closer to
+breakpoint/homogeneity analysis than standard coverage gating, and it let a
+station that fails on its own numbers get quietly re-admitted the moment a
+new data pull happened to contain a rescuing stretch. Standard
+meteorological practice is simpler and is what this audit does instead:
+accept a station's actual joint window as-is, interpolate only short gaps
+downstream (`uema.silver.fill_gaps`, ≤6h), leave longer gaps as missing
+(handled by pairwise exclusion in `uema.correlation`), and gate on the
+completeness thresholds above over that one window.
 
 These are then subject to `uema.audit.MANUAL_OVERRIDES` — an explicit,
 editable dict of `station -> (decision, reason)` for analyst judgment calls
@@ -97,47 +102,46 @@ the assessment changes; every entry there is reflected automatically in
 
 ## Result
 
-| Station                  | Decision           | Windowed decision | Best window            | Rationale                                                                                                                                          |
-| ------------------------ | ------------------ | ------------------ | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| recinto-esparza          | **GO**             | GO                  | (full span, 300 days)   | all sensors within thresholds                                                                                                                      |
-| sede-atlantico_turrialba | **GO**             | GO                  | (full span, 499 days)   | all sensors within thresholds                                                                                                                      |
-| sede-central_finca-1     | **GO**             | GO                  | (full span, 112 days)   | all sensors within thresholds                                                                                                                      |
-| sede-guanacaste_liberia  | **GO**             | GO                  | (full span, 266 days)   | all sensors within thresholds                                                                                                                      |
-| sede-sur_golfito         | **GO**             | GO                  | (full span, 234 days)   | all sensors within thresholds                                                                                                                      |
-| recinto-santa-cruz       | CONDITIONAL-GO      | **WINDOWED-GO**     | 2025-11-30 to 2026-03-01 (91 days) | pressure & luminous_intensity degraded (~47% missing, gaps up to 42 days) over the whole span, but has a 91-day clean common window at the end     |
-| sede-central_finca-2     | CONDITIONAL-GO      | **NO-GO**           | none found              | pressure & luminous_intensity degraded (~39% missing) — see the raw README for the documented luminous_intensity outage before 2025-05-20; no 90-day common window clears the threshold |
-| sede-central_finca-3     | CONDITIONAL-GO      | **NO-GO**           | none found              | pressure & luminous_intensity degraded (~51% missing, gaps up to 106 days); no 90-day common window clears the threshold                          |
-| recinto-guapiles         | **NO-GO**           | NO-GO               | none found              | pressure sensor span is 0.12 days (18 rows total) — under the 90-day minimum, effectively no usable pressure history                               |
-| sede-caribe_limon        | **NO-GO**           | NO-GO               | none found              | manual override — clears whole-span numeric thresholds but flagged by manual review (see `MANUAL_OVERRIDES` above); frequent short pressure gaps also mean no 90-day windowed stretch clears the threshold either, reinforcing the override |
+| Station                      | Decision            | Joint span                            | Rationale |
+| ----------------------------- | -------------------- | -------------------------------------- | --------- |
+| recinto-esparza                | **GO**               | 2024-11-21 → 2026-08-16 (632.4 days)  | all sensors within coverage thresholds |
+| sede-atlantico_turrialba       | **GO**               | 2024-10-03 → 2026-08-16 (681.5 days)  | all sensors within coverage thresholds |
+| sede-central_finca-1           | **GO**               | 2025-11-08 → 2026-08-16 (280.3 days)  | all sensors within coverage thresholds |
+| recinto-santa-cruz             | CONDITIONAL-GO       | 2024-12-12 → 2026-08-16 (611.3 days)  | pressure & luminous_intensity degraded within the joint window |
+| sede-central_finca-2           | CONDITIONAL-GO       | 2025-04-30 → 2026-07-21 (447.3 days)  | pressure & luminous_intensity degraded — see raw README's documented lux outage before 2025-05-20 |
+| sede-central_finca-3           | CONDITIONAL-GO       | 2024-12-12 → 2026-08-16 (611.3 days)  | pressure, precipitation & luminous_intensity all degraded within the joint window |
+| sede-central_losic-norte-1     | CONDITIONAL-GO*      | 2026-04-07 → 2026-08-16 (130.2 days)  | all sensors clean, but only 24 dry-season days in the joint window (<30d) |
+| sede-central_losic-norte-2     | CONDITIONAL-GO       | 2025-10-12 → 2026-04-04 (174.3 days)  | pressure, precipitation & luminous_intensity all degraded within the joint window |
+| sede-central_sabanilla         | CONDITIONAL-GO*      | 2026-04-29 → 2026-08-16 (108.6 days)  | all sensors clean, but only 2 dry-season days in the joint window (<30d) |
+| sede-guanacaste_liberia        | CONDITIONAL-GO       | 2024-12-12 → 2026-08-16 (611.3 days)  | pressure, precipitation & luminous_intensity all degraded within the joint window |
+| sede-sur_golfito                | CONDITIONAL-GO       | 2024-12-12 → 2026-08-16 (611.3 days)  | pressure & luminous_intensity degraded within the joint window |
+| recinto-guapiles                | **NO-GO**            | 2025-11-19 → 2025-11-19 (0.1 days)    | joint sensor overlap is 0.12 days — effectively no usable joint history |
+| sede-caribe_limon               | **NO-GO**             | 2025-11-19 → 2026-08-16 (269.5 days)  | manual override — clears numeric thresholds, but flagged by manual review (see above) |
 
-Whole-span: 5 GO, 3 CONDITIONAL-GO, 2 NO-GO (one of the NO-GOs is a manual
-override, not a threshold failure — see above). Windowed: 5 GO, 1
-WINDOWED-GO, 4 NO-GO — one former CONDITIONAL-GO station (`recinto-santa-cruz`)
-has a usable 91-day window, but the other two CONDITIONAL-GO stations and
-both original NO-GOs don't clear the windowed bar either.
+\* CONDITIONAL-GO purely on the season-coverage check, not on any sensor
+tier — all three sensors are individually `ok`.
 
-## GO station date ranges
-
-`go_station_date_ranges.csv` — the range where all three sensors are
-simultaneously present, for each `decision == "GO"` station:
-
-| Station                  | Start               | End                 | Span (days) |
-| ------------------------ | ------------------- | ------------------- | ----------- |
-| recinto-esparza          | 2024-11-21 15:00:00 | 2026-03-01 00:00:00 | 464.4       |
-| sede-atlantico_turrialba | 2024-10-03 11:40:00 | 2026-03-01 00:00:00 | 513.5       |
-| sede-central_finca-1     | 2025-11-08 17:40:00 | 2026-03-01 00:00:00 | 112.3       |
-| sede-guanacaste_liberia  | 2024-12-12 16:10:00 | 2026-02-10 00:00:00 | 424.3       |
-| sede-sur_golfito         | 2024-12-12 16:10:00 | 2026-02-18 10:10:00 | 432.8       |
+3 GO, 8 CONDITIONAL-GO, 2 NO-GO (one NO-GO is a manual override, not a
+threshold failure). Every GO/CONDITIONAL-GO station (11 of 13) is used over
+its full joint span in Step 1 — accept the blocky missingness the CONDITIONAL-GO
+rationale describes, don't clip to a shorter clean sub-window.
 
 ## Notable findings (beyond the per-station verdict)
 
 - **Pressure and luminous_intensity track together, station by station.**
-  At every station except `sede-caribe_limon` and `recinto-guapiles`, the two
-  sensors' start time, end time, gap count, and %missing are identical or
-  near-identical. This isn't documented in `data/stations/raw/README.md` and
-  suggests a shared cause (e.g. power/connectivity outages affecting the
-  whole station board, not one sensor) rather than two independent sensor
-  histories. Worth confirming with whoever runs the hardware before relying
-  on "only the lux sensor was affected" framing for any station other than
-  the one case the README does call out (`sede-central_finca-2` lux,
-  pre-2025-05-20).
+  At most stations the two sensors' gap count and %missing within the joint
+  window are identical or near-identical (exceptions: `sede-caribe_limon`,
+  `recinto-guapiles`, and `sede-central_losic-norte-2`, where precipitation
+  is also degraded). This isn't documented in `data/stations/raw/README.md`
+  and suggests a shared cause (e.g. power/connectivity outages affecting
+  the whole station board, not one sensor) rather than two independent
+  sensor histories.
+- **Joint span length says nothing about how clean it is.** Several
+  stations (`sede-central_finca-3`, `sede-guanacaste_liberia`,
+  `sede-sur_golfito`) have a joint span over 600 days but 30-45% missing
+  within it — a lot of history, most of it gappy. Step 1's post-fill
+  missingness table (`reports/variable_correlation/post_fill_missingness.csv`)
+  makes this concrete per station: it ranges from ~1% (`sede-central_sabanilla`)
+  to ~51% (`sede-central_losic-norte-2`) even after short-gap interpolation,
+  and that spread directly affects how much any given station's correlation
+  results can be trusted (see `reports/variable_correlation/README.md`).

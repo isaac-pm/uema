@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from uema.correlation import season_bucket
 from uema.io import FEATURES, SAMPLING_INTERVAL, RawFile, discover_raw_files, load_raw_series
 
 
@@ -87,15 +88,36 @@ def coverage_segments(raw_file: RawFile) -> list[tuple[pd.Timestamp, pd.Timestam
 MIN_SPAN_DAYS = 90
 PCT_MISSING_DEGRADED = 25.0
 PCT_MISSING_ABSENT = 90.0
+# A single gap longer than this is a genuine extended field outage (not a
+# routine few-day connectivity blip) — long enough to break any window/lag
+# feature crossing it regardless of how low the sensor's aggregate %missing
+# looks. Tiering on %missing alone would miss a single week-long hole
+# sitting inside an otherwise-clean history.
+MAX_GAP_DAYS = 7.0
+# Minimum calendar days of each Costa Rica season (see
+# uema.correlation.season_bucket) required within a station's decision
+# window for a GO station to be trusted for dry/wet-conditioned correlation
+# (Step 1) without a caveat — a window that clears every completeness
+# threshold can still sit almost entirely inside one season.
+MIN_SEASON_DAYS = 30
 
 
-def classify_sensor(row: pd.Series) -> str:
-    """Tier a single station/sensor coverage row: ok / degraded / short-history / absent."""
-    if row["actual_rows"] == 0 or row["pct_missing"] >= PCT_MISSING_ABSENT:
+def classify_sensor(stats: dict) -> str:
+    """Tier a single sensor's coverage stats: ok / degraded / short-history / absent.
+
+    `stats` must provide `actual_rows`, `pct_missing`, `span_days`, and
+    `max_gap_days` — computed by `_window_coverage` over the window actually
+    being scored (the station's joint sensor-overlap window in
+    `station_recommendation`, not necessarily the sensor's own full recorded
+    span).
+    """
+    if stats["actual_rows"] == 0 or stats["pct_missing"] >= PCT_MISSING_ABSENT:
         return "absent"
-    if row["span_days"] < MIN_SPAN_DAYS:
+    if stats["span_days"] < MIN_SPAN_DAYS:
         return "short-history"
-    if row["pct_missing"] > PCT_MISSING_DEGRADED:
+    if stats["pct_missing"] > PCT_MISSING_DEGRADED:
+        return "degraded"
+    if stats["max_gap_days"] > MAX_GAP_DAYS:
         return "degraded"
     return "ok"
 
@@ -110,79 +132,79 @@ MANUAL_OVERRIDES: dict[str, tuple[str, str]] = {
 }
 
 
-def _rolling_pct_missing(
-    series: pd.Series, full_index: pd.DatetimeIndex, window_days: int
-) -> pd.Series:
-    """Trailing rolling %missing of `series` against a full sampling-interval grid."""
-    present = pd.Series(0.0, index=full_index)
-    present.loc[present.index.isin(series.index)] = 1.0
-    rolling_mean = present.rolling(f"{window_days}D", min_periods=1).mean()
-    return 100 * (1 - rolling_mean)
+def _window_coverage(series: pd.Series, start: pd.Timestamp, end: pd.Timestamp) -> dict:
+    """Coverage stats for `series` restricted to [start, end].
+
+    This is the window actually used for the go/no-go decision — the
+    station's joint sensor-overlap span — not the sensor's own full recorded
+    history, which can run much longer than what's usable for joint analysis
+    (see MAX_GAP_DAYS / MIN_SEASON_DAYS docstrings above for why that
+    distinction matters).
+    """
+    windowed = series.loc[start:end]
+    expected = _expected_rows(start, end)
+    actual = len(windowed)
+    n_gaps, max_gap = _gap_stats(windowed.index)
+    # _gap_stats only diffs consecutive *present* timestamps inside the
+    # window, so an outage straddling the window boundary (last real reading
+    # before `start`, or the run from the last reading up to `end`) isn't
+    # caught by it — add those two edge gaps explicitly.
+    if actual:
+        max_gap = max(max_gap, windowed.index.min() - start, end - windowed.index.max())
+    else:
+        max_gap = end - start
+    return {
+        "span_days": (end - start).total_seconds() / 86400,
+        "expected_rows": expected,
+        "actual_rows": actual,
+        "pct_missing": 100 * (expected - actual) / expected if expected else 100.0,
+        "n_gaps": n_gaps,
+        "max_gap_days": max_gap.total_seconds() / 86400,
+    }
 
 
-def _contiguous_true_stretches(mask: pd.Series) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
-    """(start, end) of each contiguous run of True values in a boolean Series."""
-    if not mask.any():
-        return []
-    group_id = (mask != mask.shift()).cumsum()
-    return [
-        (g.index[0], g.index[-1])
-        for _, g in mask.groupby(group_id)
-        if g.iloc[0]
-    ]
-
-
-WINDOW_DAYS = 30
-
-
-def find_best_common_window(
+def _station_window_stats(
     raw_files: list[RawFile],
     station: str,
-    sensors: tuple[str, ...] = FEATURES,
-    window_days: int = WINDOW_DAYS,
-    pct_missing_threshold: float = PCT_MISSING_DEGRADED,
-    min_span_days: float = MIN_SPAN_DAYS,
-) -> tuple[pd.Timestamp, pd.Timestamp, float] | None:
-    """Longest stretch where all `sensors` are simultaneously clean at `station`.
+    sensors: tuple[str, ...],
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+) -> dict[str, dict]:
+    """`_window_coverage` for every sensor at `station` over [start, end].
 
-    Complements the whole-span decision in `station_recommendation`: a station
-    can fail whole-span thresholds while still containing a long, clean
-    sub-period worth using on its own. For each sensor, computes a trailing
-    `window_days`-day rolling %missing over a full sampling-interval grid,
-    marks bins where that stays under `pct_missing_threshold`, and intersects
-    across `sensors`. Returns (window_start, window_end, window_days) for the
-    longest resulting contiguous stretch, or None if nothing clears
-    `min_span_days`.
+    A sensor with no raw file at all for this station scores as fully
+    absent rather than being silently dropped from the roll-up.
     """
     station_files = {f.feature: f for f in raw_files if f.station == station}
-    if any(s not in station_files for s in sensors):
-        return None
-
-    series_by_sensor = {s: load_raw_series(station_files[s]) for s in sensors}
-    # Intersection of sensor spans, not union: a bin before a sensor's own
-    # recorded start isn't a real gap, it's the sensor not existing yet, and
-    # counting it as missing would poison the trailing rolling window for the
-    # first window_days after that sensor's real data begins.
-    full_start = max(s.index.min() for s in series_by_sensor.values())
-    full_end = min(s.index.max() for s in series_by_sensor.values())
-    if full_start >= full_end:
-        return None
-    full_index = pd.date_range(full_start, full_end, freq=SAMPLING_INTERVAL)
-
-    combined_good = pd.Series(True, index=full_index)
+    out = {}
     for s in sensors:
-        pct_missing = _rolling_pct_missing(series_by_sensor[s], full_index, window_days)
-        combined_good &= pct_missing < pct_missing_threshold
+        if s not in station_files:
+            out[s] = {
+                "span_days": (end - start).total_seconds() / 86400,
+                "expected_rows": _expected_rows(start, end),
+                "actual_rows": 0,
+                "pct_missing": 100.0,
+                "n_gaps": 0,
+                "max_gap_days": (end - start).total_seconds() / 86400,
+            }
+            continue
+        out[s] = _window_coverage(load_raw_series(station_files[s]), start, end)
+    return out
 
-    stretches = _contiguous_true_stretches(combined_good)
-    if not stretches:
-        return None
 
-    window_start, window_end = max(stretches, key=lambda se: se[1] - se[0])
-    window_span_days = (window_end - window_start).total_seconds() / 86400
-    if window_span_days < min_span_days:
-        return None
-    return window_start, window_end, window_span_days
+def _season_day_counts(start: pd.Timestamp, end: pd.Timestamp) -> dict[str, float]:
+    """Calendar days of each Costa Rica season within [start, end].
+
+    Daily resolution is enough here — this is a coarse "is there enough of
+    each season to trust a seasonal split" check (MIN_SEASON_DAYS), not a
+    precise accounting. See uema.correlation.season_bucket for the
+    dry/wet-month convention.
+    """
+    days = pd.date_range(start.normalize(), end.normalize(), freq="D")
+    if len(days) == 0:
+        return {"dry": 0.0, "wet": 0.0}
+    counts = season_bucket(days).value_counts()
+    return {"dry": float(counts.get("dry", 0)), "wet": float(counts.get("wet", 0))}
 
 
 def station_recommendation(
@@ -190,63 +212,108 @@ def station_recommendation(
 ) -> pd.DataFrame:
     """Per-station go/no-go for this analysis phase.
 
-    Rolls up per-sensor tiers (classify_sensor) into one row per station:
-    GO (all sensors clean), CONDITIONAL-GO (usable but specific sensors need
-    a bounded exclusion — see rationale), or NO-GO (pressure — the sensor
-    every station is expected to have — is absent or too short a history to
-    use). Purely a function of the computed tiers, no per-station
-    special-casing, except for the explicit MANUAL_OVERRIDES table above —
-    this is an explicit decision, not a silent filter applied later in a
-    pipeline.
+    Rolls up per-sensor tiers into one row per station: GO (all sensors
+    clean), CONDITIONAL-GO (usable but specific sensors/seasons need a
+    bounded caveat — see rationale), or NO-GO (sensors don't overlap at all,
+    or pressure — the sensor every station is expected to have — is absent
+    or too short a history to use). Purely a function of the computed
+    tiers, no per-station special-casing, except for the explicit
+    MANUAL_OVERRIDES table above — this is an explicit decision, not a
+    silent filter applied later in a pipeline.
 
-    Also runs `find_best_common_window` per station and derives
-    `windowed_decision`: GO stations keep "GO" (whole span already applies);
-    everything else becomes "WINDOWED-GO" if a valid common window exists,
-    else "NO-GO". This is independent of MANUAL_OVERRIDES on `decision` — an
-    overridden station's window (if any) still shows up here, so both facts
-    stay visible rather than one silently masking the other.
+    Tiers are computed on each station's *joint* sensor-overlap window
+    (`joint_span_start`/`joint_span_end` — the intersection of all three
+    sensors' recorded spans), not on each sensor's own individual span.
+    Scoring a sensor over its own full history would let a sensor with a
+    long, mostly-clean history but a short overlap with its sibling sensors
+    pass a tier it doesn't deserve for *joint* analysis — the extra history
+    outside the overlap can't be used for anything that needs all three
+    sensors together, so it shouldn't count toward "clean." Per-sensor tiers
+    also fail (`degraded`) if the single longest gap within that window
+    exceeds MAX_GAP_DAYS, even when aggregate %missing is low — an
+    unbridgeable multi-day outage can hide behind an otherwise-good average.
+
+    A GO station is further checked for season coverage
+    (`_season_day_counts`): if the joint window has fewer than
+    MIN_SEASON_DAYS of either Costa Rica season, it's downgraded to
+    CONDITIONAL-GO with a rationale calling that out, since Step 1
+    (`uema.correlation`) conditions some correlations on dry/wet season and
+    a window sitting almost entirely in one season would silently bias that
+    split.
+
+    `decision` is the only go/no-go signal this function produces — deliberately.
+    An earlier version also ran a second "windowed" layer that searched each
+    station for its own optimal rolling clean sub-window and used that to
+    rescue stations that failed the whole-span decision. That's closer to
+    breakpoint/homogeneity analysis than standard coverage gating, and it let
+    a station that fails on its own numbers get quietly re-admitted the
+    moment a new data pull happened to contain a rescuing stretch. Standard
+    meteorological practice is simpler: accept the station's actual joint
+    window as-is, interpolate short gaps downstream (`uema.silver.fill_gaps`),
+    leave longer gaps as missing (handled by pairwise exclusion in
+    `uema.correlation`), and gate on a straightforward completeness threshold
+    over that one window — which is what `decision` already is.
     """
     if raw_files is None:
         raw_files = discover_raw_files()
 
-    coverage = coverage.copy()
-    coverage["tier"] = coverage.apply(classify_sensor, axis=1)
-
     rows = []
     for station, group in coverage.groupby("station"):
-        tiers = dict(zip(group["feature"], group["tier"]))
+        # Raw intersection of all three sensors' recorded spans. No quality
+        # filter here (contrast with the tiering below, which is quality-
+        # filtered but restricted to this same window) — and only valid if
+        # every sensor actually has a file for this station.
+        has_all_sensors = set(group["feature"]) == set(FEATURES)
+        joint_span_start = group["start"].max()
+        joint_span_end = group["end"].min()
+        has_joint_span = has_all_sensors and joint_span_start < joint_span_end
+        if has_joint_span:
+            joint_span_days = (joint_span_end - joint_span_start).total_seconds() / 86400
+        else:
+            joint_span_start = joint_span_end = joint_span_days = None
+
+        if has_joint_span:
+            window_stats = _station_window_stats(
+                raw_files, station, FEATURES, joint_span_start, joint_span_end
+            )
+            tiers = {f: classify_sensor(stats) for f, stats in window_stats.items()}
+        else:
+            tiers = {f: "absent" for f in FEATURES}
+
         pressure_tier = tiers.get("pressure")
 
-        if pressure_tier == "absent":
+        if not has_joint_span:
             decision = "NO-GO"
-            rationale = "pressure sensor effectively absent"
+            rationale = "sensors have no overlapping recorded period"
+        elif pressure_tier == "absent":
+            decision = "NO-GO"
+            rationale = "pressure sensor effectively absent within the joint window"
         elif pressure_tier == "short-history":
             decision = "NO-GO"
-            rationale = f"pressure sensor span under {MIN_SPAN_DAYS} days — insufficient history to use"
+            rationale = f"joint sensor overlap under {MIN_SPAN_DAYS} days — insufficient history to use"
         elif any(t != "ok" for t in tiers.values()):
             decision = "CONDITIONAL-GO"
             flagged = [f for f, t in tiers.items() if t != "ok"]
             rationale = f"usable with caveats on: {', '.join(flagged)}"
         else:
             decision = "GO"
-            rationale = "all sensors within coverage thresholds"
+            rationale = "all sensors within coverage thresholds over the joint window"
+
+        season_days = _season_day_counts(joint_span_start, joint_span_end) if has_joint_span else {
+            "dry": None,
+            "wet": None,
+        }
+        if decision == "GO" and min(season_days["dry"], season_days["wet"]) < MIN_SEASON_DAYS:
+            thin = [s for s, d in season_days.items() if d < MIN_SEASON_DAYS]
+            decision = "CONDITIONAL-GO"
+            rationale = (
+                f"all sensors clean, but thin coverage for season(s): {', '.join(thin)} "
+                f"(<{MIN_SEASON_DAYS:.0f}d) — caution with seasonal conditioning"
+            )
 
         if station in MANUAL_OVERRIDES:
             decision, override_reason = MANUAL_OVERRIDES[station]
             rationale = f"manual override: {override_reason}"
-
-        window = find_best_common_window(raw_files, station)
-        if window is not None:
-            best_window_start, best_window_end, best_window_days = window
-        else:
-            best_window_start = best_window_end = best_window_days = None
-
-        if decision == "GO":
-            windowed_decision = "GO"
-        elif best_window_days is not None:
-            windowed_decision = "WINDOWED-GO"
-        else:
-            windowed_decision = "NO-GO"
 
         rows.append(
             {
@@ -254,34 +321,15 @@ def station_recommendation(
                 **tiers,
                 "decision": decision,
                 "rationale": rationale,
-                "best_window_start": best_window_start,
-                "best_window_end": best_window_end,
-                "best_window_days": best_window_days,
-                "windowed_decision": windowed_decision,
+                "dry_days": season_days["dry"],
+                "wet_days": season_days["wet"],
+                "joint_span_start": joint_span_start,
+                "joint_span_end": joint_span_end,
+                "joint_span_days": joint_span_days,
             }
         )
 
     return pd.DataFrame(rows).set_index("station").sort_index()
-
-
-def go_station_date_ranges(coverage: pd.DataFrame, recommendation: pd.DataFrame) -> pd.DataFrame:
-    """Per-GO-station date range where all three sensors are simultaneously present.
-
-    max() of each sensor's start and min() of each sensor's end — not any
-    single sensor's own range — since any analysis using this station needs
-    all three sensors available at once.
-    """
-    go_stations = recommendation.index[recommendation["decision"] == "GO"]
-    rows = []
-    for station in go_stations:
-        group = coverage[coverage["station"] == station]
-        start_date = group["start"].max()
-        end_date = group["end"].min()
-        span_days = (end_date - start_date).total_seconds() / 86400
-        rows.append(
-            {"station": station, "start_date": start_date, "end_date": end_date, "span_days": span_days}
-        )
-    return pd.DataFrame(rows).sort_values("station").reset_index(drop=True)
 
 
 def station_availability(coverage: pd.DataFrame) -> pd.Series:

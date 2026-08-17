@@ -16,6 +16,8 @@ dependencies = [
     "jupyter",
     "ipykernel",
     "pyarrow",
+    "scipy",
+    "statsmodels",
 ]
 
 [project.optional-dependencies]
