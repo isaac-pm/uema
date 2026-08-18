@@ -40,6 +40,17 @@ _FONT_FALLBACK_CHAIN = [
 
 DPI = 300
 
+# Standard font sizes for every plot in this project, tuned for a two-column
+# paper — figures get shrunk to column width there, so defaults noticeably
+# larger than matplotlib's own (10/'large'/'medium') are needed to stay
+# legible. Override locally only for genuinely space-constrained cases (e.g.
+# a dense per-station small-multiples grid).
+BASE_FONT_SIZE = 12
+TITLE_SIZE = 16
+LABEL_SIZE = 14
+LEGEND_SIZE = 12
+TICK_SIZE = 12
+
 
 def categorical_colors(n: int | None = None) -> list[str]:
     """Hex colors for n categorical series, in the fixed palette order."""
@@ -75,3 +86,9 @@ def apply_style() -> None:
     plt.rcParams["axes.prop_cycle"] = plt.cycler(color=categorical_colors())
     plt.rcParams["figure.dpi"] = DPI
     plt.rcParams["savefig.dpi"] = DPI
+    plt.rcParams["font.size"] = BASE_FONT_SIZE
+    plt.rcParams["axes.titlesize"] = TITLE_SIZE
+    plt.rcParams["axes.labelsize"] = LABEL_SIZE
+    plt.rcParams["legend.fontsize"] = LEGEND_SIZE
+    plt.rcParams["xtick.labelsize"] = TICK_SIZE
+    plt.rcParams["ytick.labelsize"] = TICK_SIZE
