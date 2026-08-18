@@ -1,0 +1,7 @@
+# Per-timestamp detection tables — bulky, fully reproducible by re-running
+# the producing notebook. Step 3: notebooks/03_zscore_detector.ipynb writes
+# step3_zscore_family.parquet; step3_summary.csv is small and quotes exact
+# numbers in this directory's README, so it stays tracked. Future steps
+# (4-6) should follow the same pattern: bulky per-timestamp table
+# gitignored, small cross-station summary tracked.
+*.parquet

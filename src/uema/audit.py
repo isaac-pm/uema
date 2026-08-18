@@ -127,9 +127,7 @@ def classify_sensor(stats: dict) -> str:
 # the thresholds on paper but is known/observed to be unreliable, or vice
 # versa). Edit this dict as the assessment changes; each entry is
 # station -> (decision, reason). Keep reasons specific enough to audit later.
-MANUAL_OVERRIDES: dict[str, tuple[str, str]] = {
-    "sede-caribe_limon": ("NO-GO", "flagged by manual review despite clearing numeric thresholds"),
-}
+MANUAL_OVERRIDES: dict[str, tuple[str, str]] = {}
 
 
 def _window_coverage(series: pd.Series, start: pd.Timestamp, end: pd.Timestamp) -> dict:

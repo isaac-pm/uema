@@ -47,6 +47,16 @@ def categorical_colors(n: int | None = None) -> list[str]:
     return [PALETTE[name] for name in names]
 
 
+def pretty_label(var: str) -> str:
+    """Human-readable form of a sensor/column identifier for plot text.
+
+    `luminous_intensity` -> `Luminous Intensity`. For titles, axis labels,
+    and legends -- anywhere a variable name is read as prose rather than
+    quoted as a literal identifier (e.g. station slugs, which stay as-is).
+    """
+    return var.replace("_", " ").title()
+
+
 def apply_style() -> None:
     """Register the project font and palette as matplotlib defaults.
 

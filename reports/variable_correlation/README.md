@@ -8,9 +8,9 @@ spans) — no per-station rescue-window trimming. The roster is derived at
 run time from `reports/data_audit/station_recommendation.csv`
 (`uema.silver.analysis_stations`) — see `station_scope.csv` in this
 directory for the exact stations and date ranges used on the run that
-produced these results. As of this run: 11 of 13 stations (3 GO, 8
-CONDITIONAL-GO); `recinto-guapiles` and `sede-caribe_limon` are NO-GO and
-excluded. Produced by `notebooks/01_variable_correlation.ipynb` (data prep
+produced these results. As of this run: 12 of 13 stations (3 GO, 9
+CONDITIONAL-GO); `recinto-guapiles` is NO-GO and excluded. Produced by
+`notebooks/01_variable_correlation.ipynb` (data prep
 in `src/uema/silver.py`, correlation logic in `src/uema/correlation.py`).
 Regenerate by re-running that notebook — every file in this directory is
 its output, not hand-edited.
@@ -21,8 +21,8 @@ station for an optimal rolling clean sub-window and clipped CONDITIONAL-GO
 stations to it. Standard meteorological practice is to accept a station's
 actual joint window as-is — interpolate short gaps, leave longer gaps as
 missing, gate on straightforward completeness thresholds — rather than
-hunt for a bespoke best window per station. The direct consequence: 8 of
-the 11 in-scope stations here now run over their full, sometimes gappy,
+hunt for a bespoke best window per station. The direct consequence: 9 of
+the 12 in-scope stations here now run over their full, sometimes gappy,
 joint span (post-fill missingness up to ~51% at the worst station — see
 `post_fill_missingness.csv`) rather than a clipped clean window. That
 tradeoff is visible in the Result section below, not hidden.
@@ -65,7 +65,7 @@ independence.
 ## Result
 
 Global (lag-0) correlation is small everywhere: the primary statistic never
-exceeds `|r| = 0.14` across all 11 stations x 3 pairs
+exceeds `|r| = 0.14` across all 12 stations x 3 pairs
 (`primary_correlation_summary.csv`; the single largest value is
 `pressure`-`luminous_intensity` at `sede-central_finca-3`, `r = 0.14`,
 Pearson). Still far from what would justify treating the three sensors as
@@ -81,16 +81,19 @@ completeness closely enough to need an explicit caveat:
   3.3-4.5h lag): `sede-central_sabanilla` (-0.32, 1.2% missing),
   `sede-atlantico_turrialba` (-0.24, 2.1%), `recinto-esparza` (-0.34,
   3.1%), `sede-central_losic-norte-1` (-0.35, 3.6%), `sede-central_finca-1`
-  (-0.43, 4.2%). Every station above ~11% missing instead shows a weak,
-  inconsistent, or sign-flipped peak: `sede-sur_golfito` (-0.12, 11.3%),
-  `sede-central_finca-2` (-0.08, 26.9%), `sede-guanacaste_liberia` (+0.06,
-  28.3%), `recinto-santa-cruz` (-0.06, 33.0%), `sede-central_finca-3`
+  (-0.43, 4.2%). Every station above ~11% missing instead mostly shows a
+  weak, inconsistent, or sign-flipped peak: `sede-sur_golfito` (-0.12,
+  11.3%), `sede-central_finca-2` (-0.08, 26.9%), `sede-guanacaste_liberia`
+  (+0.06, 28.3%), `recinto-santa-cruz` (-0.06, 33.0%), `sede-central_finca-3`
   (+0.21, 36.4% — opposite sign), `sede-central_losic-norte-2` (-0.11,
-  51.0%). This split is the direct, visible cost of dropping the
+  51.0%) — with one exception, `sede-caribe_limon` (-0.28, 20.7% missing),
+  whose peak is comparable in strength to the cleanest stations, so
+  missingness alone doesn't fully explain when this coupling survives. The
+  overall split is still the direct, visible cost of dropping the
   windowed-rescue mechanism: real signal at clean stations gets washed out
   (or produces artifacts, as at `finca-3`) once missingness climbs past
-  roughly 10-15%.
-- **`precipitation`-`luminous_intensity` daytime coupling holds at all 11
+  roughly 10-15%, just not uniformly so.
+- **`precipitation`-`luminous_intensity` daytime coupling holds at all 12
   stations regardless of completeness.** Daytime `r` ranges `-0.10`
   (`sede-guanacaste_liberia`) to `-0.26` (`sede-sur_golfito`) vs. `|r| <= 0.08`
   at night at every station (`conditioned_correlation_summary.csv`) —

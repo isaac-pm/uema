@@ -8,6 +8,9 @@ recinto-santa-cruz,recinto-santa-cruz,precipitation-luminous_intensity,spearman,
 sede-atlantico_turrialba,sede-atlantico,pressure-precipitation,spearman,0.029819612690640682
 sede-atlantico_turrialba,sede-atlantico,pressure-luminous_intensity,pearson,0.036496465638391824
 sede-atlantico_turrialba,sede-atlantico,precipitation-luminous_intensity,spearman,-0.06336503254807771
+sede-caribe_limon,sede-caribe,pressure-precipitation,spearman,0.05451112586653509
+sede-caribe_limon,sede-caribe,pressure-luminous_intensity,pearson,0.0734984084643499
+sede-caribe_limon,sede-caribe,precipitation-luminous_intensity,spearman,-0.10255342898774171
 sede-central_finca-1,sede-central,pressure-precipitation,spearman,-0.0032291510883536573
 sede-central_finca-1,sede-central,pressure-luminous_intensity,pearson,-0.10299414195283477
 sede-central_finca-1,sede-central,precipitation-luminous_intensity,spearman,-0.009483553061780317

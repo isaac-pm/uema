@@ -90,14 +90,12 @@ completeness thresholds above over that one window.
 These are then subject to `uema.audit.MANUAL_OVERRIDES` — an explicit,
 editable dict of `station -> (decision, reason)` for analyst judgment calls
 that override the numeric-threshold decision (e.g. a station that clears
-the thresholds on paper but is known/observed to be unreliable). Currently:
+the thresholds on paper but is known/observed to be unreliable). Currently
+empty — every station's `decision` below is the unmodified numeric-threshold
+result.
 
-| Station              | Override | Reason                                                  |
-| --------------------- | -------- | -------------------------------------------------------- |
-| `sede-caribe_limon`   | NO-GO    | flagged by manual review despite clearing numeric thresholds |
-
-Edit `MANUAL_OVERRIDES` in `src/uema/audit.py` to add/remove/change these as
-the assessment changes; every entry there is reflected automatically in
+Edit `MANUAL_OVERRIDES` in `src/uema/audit.py` to add entries as the
+assessment changes; every entry there is reflected automatically in
 `station_recommendation.csv` and both timeline figures.
 
 ## Result
@@ -115,24 +113,24 @@ the assessment changes; every entry there is reflected automatically in
 | sede-central_sabanilla         | CONDITIONAL-GO*      | 2026-04-29 → 2026-08-16 (108.6 days)  | all sensors clean, but only 2 dry-season days in the joint window (<30d) |
 | sede-guanacaste_liberia        | CONDITIONAL-GO       | 2024-12-12 → 2026-08-16 (611.3 days)  | pressure, precipitation & luminous_intensity all degraded within the joint window |
 | sede-sur_golfito                | CONDITIONAL-GO       | 2024-12-12 → 2026-08-16 (611.3 days)  | pressure & luminous_intensity degraded within the joint window |
+| sede-caribe_limon               | CONDITIONAL-GO       | 2025-11-19 → 2026-08-16 (269.5 days)  | pressure & luminous_intensity degraded within the joint window |
 | recinto-guapiles                | **NO-GO**            | 2025-11-19 → 2025-11-19 (0.1 days)    | joint sensor overlap is 0.12 days — effectively no usable joint history |
-| sede-caribe_limon               | **NO-GO**             | 2025-11-19 → 2026-08-16 (269.5 days)  | manual override — clears numeric thresholds, but flagged by manual review (see above) |
 
 \* CONDITIONAL-GO purely on the season-coverage check, not on any sensor
 tier — all three sensors are individually `ok`.
 
-3 GO, 8 CONDITIONAL-GO, 2 NO-GO (one NO-GO is a manual override, not a
-threshold failure). Every GO/CONDITIONAL-GO station (11 of 13) is used over
-its full joint span in Step 1 — accept the blocky missingness the CONDITIONAL-GO
-rationale describes, don't clip to a shorter clean sub-window.
+3 GO, 9 CONDITIONAL-GO, 1 NO-GO. Every GO/CONDITIONAL-GO station (12 of 13)
+is used over its full joint span in Step 1 — accept the blocky missingness
+the CONDITIONAL-GO rationale describes, don't clip to a shorter clean
+sub-window.
 
 ## Notable findings (beyond the per-station verdict)
 
 - **Pressure and luminous_intensity track together, station by station.**
   At most stations the two sensors' gap count and %missing within the joint
-  window are identical or near-identical (exceptions: `sede-caribe_limon`,
-  `recinto-guapiles`, and `sede-central_losic-norte-2`, where precipitation
-  is also degraded). This isn't documented in `data/stations/raw/README.md`
+  window are identical or near-identical (exceptions: `recinto-guapiles`
+  and `sede-central_losic-norte-2`, where precipitation is also degraded).
+  This isn't documented in `data/stations/raw/README.md`
   and suggests a shared cause (e.g. power/connectivity outages affecting
   the whole station board, not one sensor) rather than two independent
   sensor histories.

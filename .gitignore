@@ -73,3 +73,7 @@ notebooks/*.html
 # Agents
 AGENTS.md
 CLAUDE.md
+context/Standalone_Plan.md
+
+# Other
+paper/
