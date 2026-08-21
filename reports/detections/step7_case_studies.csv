@@ -1,0 +1,5 @@
+case,station,sensor,start,end,length_bins,duration_hours,flagging_methods,value_min,value_max,raw_missing_in_episode
+impossible_pressure,recinto-santa-cruz,pressure,2025-01-25 20:40:00,2025-01-27 10:50:00,230,38.3,"autoencoder, gru_ae, isolation_forest, lof, lstm_ae, modified_z_score, z_score",1350.89,1370.74,25
+reconstruction_only_lux,sede-central_finca-1,luminous_intensity,2025-11-25 10:40:00,2025-11-25 13:20:00,17,2.8,"autoencoder, gru_ae, lstm_ae",2632.1,26002.6,0
+lof_only_precipitation,recinto-esparza,precipitation,2025-09-17 19:50:00,2025-09-17 22:00:00,14,2.3,lof,0.0,2.24,0
+contextual_only_lux,sede-sur_golfito,luminous_intensity,2026-02-02 02:40:00,2026-02-02 06:50:00,26,4.3,z_score_context_hour,0.0,13174.09,26

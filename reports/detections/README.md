@@ -688,3 +688,173 @@ detector; 4, 8 and 16 are variations on one.
 `1 - pct` throughout, the same direction Step 5 found, meaning the held-out
 tail of each record reconstructs marginally better than the record as a
 whole.
+
+---
+
+## Step 7 — cross-method agreement and disagreement (the central analysis)
+
+`notebooks/07_cross_method_agreement.ipynb`, logic in
+`src/uema/crossmethod.py` (built on `src/uema/agree.py`). Aligns the eight
+method entries Steps 3-6 produced, measures where they agree and diverge,
+tests the Step 2 criteria against what they actually flagged, and
+characterizes four disagreement episodes against the raw signal.
+
+Roster: `z_score`, `modified_z_score`, `lof`, `isolation_forest`,
+`autoencoder`, `lstm_ae`, `gru_ae` on all three sensors, plus
+`z_score_context_hour` on `luminous_intensity` alone. `lof_6h` /
+`isolation_forest_6h` are Step 4b controls and are excluded. Aligned via
+`align_by_sensor` (never `align_scores` — see Step 5): **592,356
+`pressure` / 726,687 `precipitation` / 590,352 `luminous_intensity`**
+jointly scored rows, reproducing the counts the plan predicted exactly.
+
+Outputs (all tracked; no parquet this step): `step7_flagged_rates.csv`,
+`step7_jaccard_pairs.csv`, `step7_jaccard_summary.csv`,
+`step7_jaccard_vs_kappa.csv`, `step7_family_agreement.csv`,
+`step7_family_vote_jaccard.csv`, `step7_consensus_counts.csv`,
+`step7_exclusive_share.csv`, `step7_displacement_context.csv`,
+`step7_run_length.csv`, `step7_contextual_profile.csv`,
+`step7_station_heterogeneity.csv`, `step7_precip_provenance.csv`,
+`step7_impossible_pressure.csv`, `step7_case_studies.csv`,
+`step7_taxonomy_verdicts.csv`, and three figures
+(`step7_jaccard_matched_heatmap.png`, `step7_run_length.png`,
+`step7_case_studies.png`, the last three also copied into `paper/figures/`
+byte-identical).
+
+### Agreement is low everywhere, under both regimes
+
+Mean pairwise Jaccard, matched 1% budget: **0.127 `pressure`, 0.239
+`precipitation`, 0.077 `luminous_intensity`**; at native thresholds 0.088 /
+0.166 / 0.061. Matching the budget raises agreement on every channel without
+changing its order of magnitude. The largest cross-family pair anywhere in
+the project is `modified_z_score`-`isolation_forest` on `precipitation` at
+**0.368**; nothing on `pressure` exceeds 0.227 and nothing on
+`luminous_intensity` exceeds 0.098.
+
+Cohen's kappa was computed once as a secondary statistic (mean 0.187 /
+0.339 / 0.109) with raw agreement never below 98.0% — the paradox regime,
+exactly as Step 4b anticipated. It carries the same ordering as Jaccard and
+changes no conclusion.
+
+**The reconstruction bloc is not an artifact of vote-counting.** Giving each
+family one vote at the same budget (rank-average of its members, so a
+three-member family carries no extra weight) leaves the highest family-level
+pair at 0.256 (statistical-density, `precipitation`) and everything else
+between 0.018 and 0.189.
+
+### The disagreement has structure: temporal footprint
+
+The result that turns the low numbers into a positive finding. At a matched
+budget every method flags the same *number* of readings, so the arrangement
+of those flags in time is directly comparable. Share of flags sitting in
+runs of >=1h (`step7_run_length.csv`):
+
+| method | pressure | precip | lux |
+|---|---|---|---|
+| `z_score` | 0.127 | 0.102 | 0.005 |
+| `modified_z_score` | 0.367 | 0.202 | 0.074 |
+| `lof` | 0.040 | 0.196 | 0.235 |
+| `isolation_forest` | 0.548 | 0.782 | 0.046 |
+| `autoencoder` | 0.773 | 0.812 | 0.701 |
+| `lstm_ae` | 0.906 | 0.959 | 0.845 |
+| `gru_ae` | 0.914 | 0.953 | 0.837 |
+
+Median run length runs from 1-2 bins (`z_score`, `modified_z_score`, `lof`)
+to 7 / 13 / 5 bins (`lstm_ae`). The families are not disputing a common
+candidate set — they populate the record with detections of different
+temporal extent, which is what Step 2's point-vs-collective split predicts.
+
+**`lof` does not behave like its family label.** It is the most isolated
+flagged set on `pressure` (60.8% single bins, against `z_score`'s 22.2%),
+the most *exclusive* on all three channels (0.934 lux / 0.738 pressure /
+0.478 precip), and the only entry whose flags are not concentrated in
+daylight (56.8% at night against a 50.1% baseline). Its agreement with
+`isolation_forest` — its own family — is 0.030 on `pressure` and 0.013 on
+lux, *below* the cross-family mean on both.
+
+### The one testable contextual criterion holds
+
+Every aligned lux reading was ranked twice per station: against the whole
+record, and against the same hour of day. Step 2's contextual criterion is
+the conjunction "central globally, extreme for its hour", which 5.4% of all
+rows satisfy by chance. `z_score_context_hour` puts **91.4%** of its flags
+there and only 6.7% in the globally extreme tail; no other entry exceeds
+21.0% (`lof`), with the reconstruction entries at 5.1-5.8%, i.e. chance.
+`z_score` is the mirror image: **41.6%** globally extreme, the highest of
+the eight.
+
+Caveat recorded in the writeup rather than glossed: hour-extremeness is
+partly *definitional* for an hour-conditioned statistic. The testable half
+is that the other seven methods do not reach those readings.
+
+### Criteria verdicts (`step7_taxonomy_verdicts.csv`)
+
+**Seven of nine consistent, none inconsistent, two not evaluable** — the two
+cross-sensor contextual criteria, exactly as Step 1's closing note required
+them to be reported. Each verdict cell carries the statistic it rests on and
+its own caveat.
+
+### Station heterogeneity, and what it probably means
+
+Mean pairwise agreement per station spans 0.075-0.279 on `pressure` (a
+factor of 3.7), 0.175-0.330 on `precipitation`, 0.075-0.127 on lux.
+Agreement correlates **positively** with post-fill missingness (Spearman
++0.46 / +0.62 / +0.21), i.e. it is *higher* at the gappier stations. The
+likely reading is that gappier stations are less healthy stations, so their
+records hold more large unambiguous faults that everything finds —
+`recinto-santa-cruz`, which holds nearly all the impossible pressure values,
+is among the three highest-agreement pressure stations. High agreement at a
+station is therefore closer to a signal about hardware health than a
+certificate of detector quality.
+
+### Four disagreement case studies
+
+Selected mechanically (longest contiguous episode of each pattern), then
+inspected against the raw record.
+
+1. **A 38.3-hour physically impossible pressure plateau**
+   (`recinto-santa-cruz`, 2025-01-25 20:40 to 01-27 10:50, 1350.9-1370.7
+   hPa). 322 impossible readings exist in the observed records; the <=6h
+   `fill_gaps` interpolation across brief outages inside the corrupt
+   stretches raises that to 491 on the filled series and 353 inside the
+   aligned set (Step 5 quoted the observed 322). Of those 353, at native
+   thresholds `autoencoder`, `lstm_ae`, `gru_ae` and `isolation_forest` flag
+   **100%**, `lof` and `modified_z_score` 8.5%, and **`z_score` flags none**
+   — its largest |z| inside the episode is **1.02** against a threshold of
+   3. Textbook masking: the 6h rolling baseline is computed from a window
+   the fault has already filled. This is the strongest single result in the
+   step.
+2. **A multi-hour lux oscillation flagged only by reconstruction**
+   (`sede-central_finca-1`, 2025-11-25, 17 bins, 8k-26k lux swings). All
+   three reconstruction entries, nothing else, no missing readings.
+3. **A dry interval inside a rain event flagged only by `lof`**
+   (`recinto-esparza`, 2025-09-17, 14 bins, all exactly 0.0 mm inside a
+   19.84 mm rain day). The 1h feature windows are all-zero duplicates; LOF
+   scores inside the episode reach 2.4e8 and 5.0e8 against a median of
+   exactly 1.0 and a p99 of 1.211. The Step 4 tie degeneracy, caught in the
+   act.
+4. **An interpolated nighttime ramp flagged only by the contextual variant**
+   (`sede-sur_golfito`, 2026-02-02 02:40-06:50). All 26 readings are
+   *absent* from the raw record: a 5.5h outage sits just inside the 6h fill
+   limit, so `fill_gaps` linearly interpolated from a nighttime zero to a
+   morning ~8,500 lux, manufacturing several thousand lux at 04:00. The
+   detector is right that this is impossible for the hour; the anomaly is
+   one the pipeline created. The same night recurs at two other stations.
+
+### Controls, completed over the full roster
+
+Step 4b checked the zero-fill hypothesis against the four Step 3-4 methods
+only. Extended here to all seven precipitation entries: every method still
+places a *smaller* share of its precipitation flags on suspect zeros than
+chance (20.0% baseline) — 8.3% `lstm_ae`, 8.1% `autoencoder`, 7.7%
+`gru_ae`, 2.1% `isolation_forest`, 2.0% `lof`, 0.04% `z_score`, 0.0%
+`modified_z_score`. The reconstruction family lands on them ~4x more often
+than the others, still far below chance.
+
+### Consensus is a much stronger filter than it looks
+
+Of readings flagged by at least one of the seven common entries at matched
+budget (4.40% `pressure` / 3.12% `precipitation` / 4.88% lux of all rows),
+only **5.45% / 14.98% / 3.15%** are flagged by four or more. Exactly **one**
+lux reading in 590,352 is flagged by all seven. A majority-vote alarm rule
+would discard most of every method's detections, including all four case
+studies above.

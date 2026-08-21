@@ -1,0 +1,10 @@
+sensor,family_a,family_b,jaccard
+luminous_intensity,statistical,density,0.06003415116383572
+luminous_intensity,statistical,reconstruction,0.018213206732844194
+luminous_intensity,density,reconstruction,0.1204750593824228
+precipitation,statistical,density,0.2559467174119886
+precipitation,statistical,reconstruction,0.06734798911844718
+precipitation,density,reconstruction,0.18894801473598036
+pressure,statistical,density,0.03290564720258357
+pressure,statistical,reconstruction,0.021316993182014327
+pressure,density,reconstruction,0.08898500046010858

@@ -1,0 +1,7 @@
+sensor,regime,mean_pairwise,max_pairwise
+luminous_intensity,matched,0.077,0.515
+luminous_intensity,native,0.061,0.514
+precipitation,matched,0.239,0.802
+precipitation,native,0.166,0.772
+pressure,matched,0.127,0.724
+pressure,native,0.088,0.695
