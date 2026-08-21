@@ -18,6 +18,8 @@ dependencies = [
     "pyarrow",
     "scipy",
     "statsmodels",
+    "scikit-learn",
+    "torch",
 ]
 
 [project.optional-dependencies]

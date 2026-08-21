@@ -1,0 +1,9 @@
+sensor,method_a,method_b,jaccard,method
+luminous_intensity,window_36,window_6,0.14513692162417374,lstm_ae
+precipitation,window_36,window_6,0.21288348771989463,lstm_ae
+pressure,window_36,window_6,0.2520844420791201,lstm_ae
+all,window_36,window_6,0.20469209955100948,lstm_ae
+luminous_intensity,window_36,window_6,0.14199876292303615,gru_ae
+precipitation,window_36,window_6,0.21400842487816965,gru_ae
+pressure,window_36,window_6,0.2586033238207151,gru_ae
+all,window_36,window_6,0.20598222876223896,gru_ae

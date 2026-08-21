@@ -12,7 +12,13 @@ from dataclasses import dataclass
 import pandas as pd
 
 from uema.correlation import season_bucket
-from uema.io import FEATURES, SAMPLING_INTERVAL, RawFile, discover_raw_files, load_raw_series
+from uema.io import (
+    FEATURES,
+    SAMPLING_INTERVAL,
+    RawFile,
+    discover_raw_files,
+    load_raw_series,
+)
 
 
 @dataclass(frozen=True)

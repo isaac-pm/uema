@@ -99,3 +99,32 @@ def fill_gaps(df: pd.DataFrame, max_gap: str = "6h") -> pd.DataFrame:
             method="linear", limit=max_gap_bins, limit_area="inside"
         )
     return filled
+
+
+def suspect_zero_precipitation(df: pd.DataFrame) -> pd.Series:
+    """Flag `precipitation` bins that are 0.0 while the station looks offline.
+
+    Precipitation is zero-filled at export: a 10-minute bin with no report
+    becomes `0.0` on the deliberate assumption that no report means no rain
+    (`data/stations/raw/README.md`). Pressure and luminous intensity get no
+    such treatment — their gaps stay genuinely missing — and Step 0 found
+    that those two channels' outages track each other closely at every
+    station, consistent with a shared connectivity or power cause rather
+    than two independent sensor failures. A bin where both of them are
+    missing is therefore a bin where the station was probably not reporting
+    at all, and a `0.0` precipitation value recorded there is an artifact of
+    the fill rather than an observed dry ten minutes.
+
+    This matters well beyond bookkeeping: those synthetic zeros are
+    indistinguishable from real dry bins to every detector in this project,
+    they inflate the point mass at zero that density methods degenerate on,
+    and they are concentrated in exactly the outage periods where other
+    channels' anomalies cluster.
+
+    Must be computed on the resampled but **not** gap-filled frame — once
+    `fill_gaps` bridges short pressure/luminous_intensity outages, the
+    missing-sibling signature this relies on is gone for any gap under the
+    fill limit. Returns a boolean Series aligned to `df.index`.
+    """
+    offline = df["pressure"].isna() & df["luminous_intensity"].isna()
+    return df["precipitation"].eq(0.0) & offline

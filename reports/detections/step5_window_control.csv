@@ -1,0 +1,5 @@
+sensor,method_a,method_b,jaccard
+luminous_intensity,window_36,window_6,0.053406998158379376
+precipitation,window_36,window_6,0.20995176440720995
+pressure,window_36,window_6,0.17150041911148364
+all,window_36,window_6,0.1277430539714403

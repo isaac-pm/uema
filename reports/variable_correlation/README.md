@@ -65,9 +65,9 @@ independence.
 ## Result
 
 Global (lag-0) correlation is small everywhere: the primary statistic never
-exceeds `|r| = 0.14` across all 12 stations x 3 pairs
+exceeds `|r| = 0.15` across all 12 stations x 3 pairs
 (`primary_correlation_summary.csv`; the single largest value is
-`pressure`-`luminous_intensity` at `sede-central_finca-3`, `r = 0.14`,
+`pressure`-`luminous_intensity` at `sede-central_finca-3`, `r = 0.144`,
 Pearson). Still far from what would justify treating the three sensors as
 one coupled multivariate system by default.
 

@@ -19,7 +19,7 @@ import pandas as pd
 
 SCHEMA_COLUMNS = ["station", "sensor", "timestamp", "method", "flagged", "score"]
 
-# 6h centered window at 10-minute resolution — matches the trailing-mean
+# 6h centered window at 10-minute resolution — matches the local rolling-mean
 # point-anomaly criterion Step 2 wrote for pressure, reused unchanged for
 # all three sensors so the same detector logic applies uniformly.
 WINDOW_BINS = 36
@@ -35,7 +35,7 @@ MIN_PERIODS = WINDOW_BINS // 2
 GLOBAL_FLOOR_FRAC = 0.1
 
 Z_THRESHOLD = 3.0
-MODIFIED_Z_THRESHOLD = 3.5  # Iglewicz & Hoya (1993) convention for modified z
+MODIFIED_Z_THRESHOLD = 3.5  # Iglewicz & Hoaglin (1993) convention for modified z
 
 
 def rolling_zscore(

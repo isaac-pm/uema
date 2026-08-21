@@ -3,8 +3,9 @@
 ## Data Origin
 
 Raw meteorological data comes from the **UCR-µEMA network** (Universidad de Costa
-Rica micro-Environmental Monitoring Array), 10 low-cost weather stations
-deployed across Costa Rica. Each station reports three sensor channels:
+Rica, *Micro Estaciones Meteorológicas Automáticas*), 13 low-cost weather
+stations deployed across Costa Rica. Each station reports three sensor
+channels:
 
 | Feature              | Unit | Notes                                         |
 | -------------------- | ---- | --------------------------------------------- |
@@ -24,8 +25,9 @@ station/feature combination.
 
 ## Stations
 
-10 stations, identified by a `filename` slug (also used as the CSV filename
-component) and an index prefix `00`–`09`:
+13 stations, identified by a `filename` slug (also used as the CSV filename
+component) and an index prefix `00`–`12`. Indices `10`–`12` came online after
+the original ten and were added by a later pull:
 
 - 00 `sede-central_finca-1`
 - 01 `recinto-esparza`
@@ -37,6 +39,11 @@ component) and an index prefix `00`–`09`:
 - 07 `sede-central_finca-2`
 - 08 `sede-central_finca-3`
 - 09 `recinto-santa-cruz`
+- 10 `sede-central_sabanilla`
+- 11 `sede-central_losic-norte-1`
+- 12 `sede-central_losic-norte-2`
+
+13 stations x 3 channels = 39 CSVs in `data/stations/raw/`.
 
 CSV naming convention: `{index}_{feature}_{station}.csv`, e.g.
 `00_pressure_sede-central_finca-1.csv`.
@@ -80,6 +87,12 @@ disk, so they are not "raw sensor values" in the strictest sense:
    | sede-central_finca-2     | +138.3       |
    | sede-central_finca-3     | +138.3       |
    | recinto-santa-cruz       | +5.9         |
+
+   The offsets above were recorded for the original ten stations only. The
+   offsets applied to `sede-central_sabanilla`, `sede-central_losic-norte-1`
+   and `sede-central_losic-norte-2` were not captured when those stations were
+   pulled, so they are unknown here — the values in their pressure CSVs are
+   still calibration-corrected, but by an amount this file does not record.
 
 5. **Timezone.** Timestamps are converted from UTC (native InfluxDB storage)
    to **Costa Rica local time (UTC−06:00, fixed offset, no DST)** before

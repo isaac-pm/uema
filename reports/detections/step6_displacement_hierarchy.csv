@@ -1,0 +1,5 @@
+change,luminous_intensity,precipitation,pressure,overall
+reseed the same architecture,0.563,0.79,0.727,0.693
+swap LSTM for GRU,0.542,0.771,0.687,0.667
+add recurrence (dense vs recurrent),0.447,0.65,0.327,0.475
+change the window (36 vs 6 bins),0.144,0.213,0.255,0.204
